@@ -1,0 +1,65 @@
+cabal-version: 1.12
+
+-- This file has been generated from package.yaml by hpack version 0.33.0.
+--
+-- see: https://github.com/sol/hpack
+--
+-- hash: f461b611f4d9b8447084c614b26d93ef8f13c7feb9ee3205b53053da508ecde6
+
+name:           modern-algebra
+version:        0.1.0.0
+description:    Please see the README on GitHub at <https://github.com/githubuser/modern-algebra#readme>
+homepage:       https://github.com/githubuser/modern-algebra#readme
+bug-reports:    https://github.com/githubuser/modern-algebra/issues
+author:         Author name here
+maintainer:     example@example.com
+copyright:      2021 Author name here
+license:        BSD3
+license-file:   LICENSE
+build-type:     Simple
+extra-source-files:
+    README.md
+    ChangeLog.md
+
+source-repository head
+  type: git
+  location: https://github.com/githubuser/modern-algebra
+
+library
+  exposed-modules:
+      Lib
+  other-modules:
+      Paths_modern_algebra
+  hs-source-dirs:
+      src
+  build-depends:
+      base >=4.7 && <5
+    , containers >= 0.4.6
+  default-language: Haskell2010
+
+executable modern-algebra-exe
+  main-is: Main.hs
+  other-modules:
+      Paths_modern_algebra
+  hs-source-dirs:
+      app
+  ghc-options: -threaded -rtsopts -with-rtsopts=-N
+  build-depends:
+      base >=4.7 && <5
+    , containers >= 0.4.6
+    , modern-algebra
+  default-language: Haskell2010
+
+test-suite modern-algebra-test
+  type: exitcode-stdio-1.0
+  main-is: Spec.hs
+  other-modules:
+      Paths_modern_algebra
+  hs-source-dirs:
+      test
+  ghc-options: -threaded -rtsopts -with-rtsopts=-N
+  build-depends:
+      base >=4.7 && <5
+    , containers >= 0.4.6
+    , modern-algebra
+  default-language: Haskell2010
