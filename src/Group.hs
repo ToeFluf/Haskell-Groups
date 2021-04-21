@@ -1,27 +1,22 @@
 {-# LANGUAGE GADTs #-}
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE FlexibleInstances #-}
 
 module Group where
 
-import Data.Semigroup --hiding (Sum)
-import Data.Monoid --hiding (Sum)
+import Data.Semigroup --hiding (Any, All)
+import Data.Monoid --hiding (Any, All)
 import Control.Applicative
 import Data.Either
+import Data.Bits (xor)
 
---homomorphism :: Morphism -> BinaryOp (Group a) ->
---homomorphism f (op a1 a2)
 {-}
-newtype Homomorphism a = Homomorphism (a -> b)
 
 data Group a where
     Group :: Monoid a => [a] -> (a -> a) -> Group a
     --Abelian :: Monoid a, Commutative a => [a] -> (a -> a) -> Group a
     --Cyclic :: Monoid a, Commutative a => [(a,Int)] -> Group a
 
-instance Monoid a => Monoid (Homomorphism a) where
-    (Homomorphism a1) <> (Homomorphism a2) = Homomorphism $ a1 <> a2
-    mempty (Homomorphism a) = mempty a
--}
-{-}
 class Semigroup a where
     (<>) :: a -> a ->  a
 -- combines thing and has set closure
@@ -47,10 +42,11 @@ data HyperOrder = Infinite | Unknown String
 
 class Monoid a => Group a where
     invert :: a -> a
+    invert mempty = mempty
+
     ord :: a -> Either HyperOrder Integer
-    ord mappend = Right 1
-    --getId :: a
-    --getId = mempty
+    ord mempty = Right 1
+
     pow :: Integral x => a -> x -> a
     pow x0 n0 = case compare n0 0 of
         LT -> invert . f x0 $ negate n0
@@ -79,21 +75,111 @@ instance Num a => Group (Sum a) where
     pow (Sum a) b = Sum (a * fromIntegral b)
     ord _ = Left Infinite
 
--------------------------------------------------------------------
-{-newtype Prod a = Prod a
-    deriving (Show)
+--phantom typing
+newtype Z_n p = Z_n Integer
+    deriving Show
 
-instance Fractional a => Semigroup (Prod a) where
-    (<>) (Prod a) (Prod b) = Prod $ a*b
+-- Equivalence under modulo p => Covers things < 0 and >= p
+instance TypeNum p => Eq (Z_n p) where
+    a == b = case a <> invert b of
+        Z_n 0   -> True
+        _       -> False
 
-instance Fractional a => Monoid (Prod a) where
-    mempty = Prod 1
+-- Order under modulo p => Covers things < 0 and >= p
+instance TypeNum p => Ord (Z_n p) where
+    a <= b = a1 <= b1
+        where
+            Z_n a1 = a <> mempty -- forces things outside of [0, p-1] into the modulo range
+            Z_n b1 = b <> mempty
+
+class TypeNum p where
+    typeNum :: p -> Integer
+
+fixTypeNum :: TypeNum p => (Integer -> Z_n p) -> Z_n p
+fixTypeNum f = r
+    where
+        r = f (typeNum $ ty r)
+        ty :: Z_n p -> p
+        ty _ = undefined
+
+{-data Three = Three
+instance TypeNum Three where
+    typeNum _ = 3
 -}
+data Four = Four
+instance TypeNum Four where
+    typeNum _ = 4
+
+instance TypeNum () where
+    typeNum _ = 0
+
+mkTest2 :: TypeNum p => Integer -> Z_n p
+mkTest2 x = fixTypeNum $ \n -> Z_n $ mod x n
+
+instance TypeNum a => Semigroup (Z_n a) where
+    (Z_n a) <> (Z_n b) = mkTest2 $ a + b
+
+instance TypeNum a => Monoid (Z_n a) where
+    mempty = Z_n 0
+
+instance TypeNum a => Group (Z_n a) where
+    invert (Z_n x) = fixTypeNum $ \n -> Z_n $ n - x
+    ord (Z_n x) = Left $ Unknown "Unknown "--case fixTypeNum $ \n -> Z_n $ n of
+        --Z_n n -> Right (cd x n ::Integer)
+
+instance TypeNum a => Abelian (Z_n a)
+instance TypeNum a => Cyclic (Z_n a) where
+    generator = Z_n 1
+
+-- If you take group actions applied to a Tree
+-- G acts on BT => Should preserve order of nodes in the tree
+
+{-
+LOOOK
+https://downloads.haskell.org/~ghc/7.10.1/docs/html/users_guide/type-level-literals.html
+GHC.TypeLits> natVal (Proxy :: Proxy (2 + 3))
+import GHC.TypeLits
+import Data.Proxy
+https://hackage.haskell.org/package/base-4.15.0.0/docs/GHC-TypeLits.html
+Example: https://wiki.haskell.org/wikiupload/1/11/Hiw2012-iavor-diatchki.pdf
+-}
+
+-------------------------------------------------------------------
+
 instance Fractional a => Group (Product a) where
     invert (Product a) = Product $ 1 / a
     pow (Product a) b = Product (a ^^ b)
     ord _ = Left Infinite
 
+{-}
+instance Semigroup (Sum Bool) where
+    (Sum a) <> (Sum b) = Sum $ xor a b
+
+instance Semigroup (Product Bool) where
+     (Product a) <> (Product b) = Product $ a == b
+
+instance Monoid (Sum Bool) where
+    mempty = Sum False
+
+instance Monoid (Product Bool) where
+    mempty = Product True
+
+instance Group (Sum Bool) where
+    invert a = a
+    pow (Sum True) b    | even b = Sum True
+                        | otherwise = Sum False
+    pow _ _ = Sum False
+    ord (Sum True) = Right 2
+    ord _ = Right 1
+
+instance Group (Product Bool) where
+    invert a = a
+    pow (Product False) b   | even b = Product False
+                            | otherwise = Product True
+    pow _ _ = Product True
+    ord (Product False) = Right 2
+    ord _ = Right 1
+-}
 ---------------------------------------------------------------
 -- RIPPED FROM: https://hackage.haskell.org/package/groups-0.5.2/docs/src/Data.Group.html
 -- NOT MY WORK
@@ -134,7 +220,6 @@ instance (Group a, Group b, Group c, Group d, Group e) => Group (a, b, c, d, e) 
   pow (a, b, c, d, e) n = (pow a n, pow b n, pow c n, pow d n, pow e n)
   ord (a, b, c, d, e) = liftA2 (*) (ord a) $ liftA2 (*) (ord b) $ liftA2 (*) (ord c) $ liftA2 (*) (ord d) (ord e)
 
-
 -- This means the group is Commutative
 -- So, a <> b == b <> a
 class Group a => Abelian a
@@ -158,35 +243,22 @@ instance (Abelian a, Abelian b, Abelian c, Abelian d, Abelian e) => Abelian (a, 
 class Abelian a => Cyclic a where
     generator :: a
 
-{-}
---[Left Inverse] invert_left <> a = e
---[Right Inverse] a <> invert_right = e
-class Monoid a => Group a where
-    --set :: Set a
-    --closure :: Set a -> (a -> a -> a) -> Bool
-    invert :: a -> a
-
-class Monoid a => Commutative a
-
-class Group a => Abelian a
-
-class Abelian a => Cyclic a where
-    generator :: a
-
-instance Abelian a => Num (Sum a) where
-    invert = negate
---overlapping instances
-
-
-instance Abelian a => Fractional (Product a) where
-    invert a   | a == 0 = error "cannot invert 0"
-                | otherwise = 1 / a
--}
--- From Monoid we inherit the following
--- [Right identity] @x '<>' 'mempty' = x@
--- [Left identity]  @'mempty' '<>' x = x@
--- [Associativity]  @x '<>' (y '<>' z) = (x '<>' y) '<>' z@ ('Semigroup' law)
--- [Concatenation]  @'mconcat' = 'foldr' ('<>') 'mempty'@
+instance Integral a => Cyclic (Sum a) where
+    generator = 1
 
 --isHomomorphic :: (Group a, Group b) => (a -> b) -> a -> a -> Bool
 --isHomomorphic f g1 g2 = fmap f (g1 <> g2) == fmap f g1 <> fmap f g2
+{-
+class (Group a, Group b) => Homomorphism (a -> b) where
+
+-}
+{-
+isHomomorphic :: (Group a, Group b) => (a -> b) -> a -> a -> Bool
+isHomomorphic f g1 g2 = c && m
+    where
+        c = f (g1 <> g2) == f g1 <> f g2
+        m = (f mempty) == mempty
+-}
+
+homomorphism :: (Group a, Group b) => (a -> b) -> a -> a -> b
+homomorphism f a1 a2 = (f a1) <> (f a2)
