@@ -1,6 +1,11 @@
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE DataKinds #-}
+{-# LANGUAGE KindSignatures #-}
+{-# LANGUAGE PolyKinds #-}
+
 
 module Group where
 
@@ -9,6 +14,8 @@ import Data.Monoid --hiding (Any, All)
 import Control.Applicative
 import Data.Either
 import Data.Bits (xor)
+import GHC.TypeLits
+import Data.Proxy
 
 {-}
 
@@ -37,17 +44,19 @@ class Semigroup a => Monoid a where
     -- What about taking Applicative and foldr?
 -- Lists under (++) (The space is all combinations)
 -- Can you isolate sets of class types by using the forall structure?
+
+-- Used for getting the order of an element, where ord = n st x^n = id
 data HyperOrder = Infinite | Unknown String
     deriving (Show, Eq)
 
 class Monoid a => Group a where
-    invert :: a -> a
+    invert :: a -> a -- get the inverse of an element
     invert mempty = mempty
 
-    ord :: a -> Either HyperOrder Integer
+    ord :: a -> Either HyperOrder Integer -- get the order of an element
     ord mempty = Right 1
 
-    pow :: Integral x => a -> x -> a
+    pow :: Integral x => a -> x -> a --take an element to an integral power
     pow x0 n0 = case compare n0 0 of
         LT -> invert . f x0 $ negate n0
         EQ -> mempty
@@ -70,11 +79,51 @@ instance Num a => Semigroup (Sum a) where
 instance Num a => Monoid (Sum a) where
     mempty = Sum 0
 -}
-instance Num a => Group (Sum a) where
+instance Num a => Group (Sum a) where -- A Sum-type wrapper for numeric groups
     invert (Sum a) = Sum $ negate a
     pow (Sum a) b = Sum (a * fromIntegral b)
     ord _ = Left Infinite
 
+instance Fractional a => Group (Product a) where -- A product-type wrapper for numeric groups
+    invert (Product a) = Product $ 1 / a
+    pow (Product a) b = Product (a ^^ b)
+    ord _ = Left Infinite
+
+
+----------------------------------------------
+-- This is me trying to test the stuff from: https://wiki.haskell.org/wikiupload/1/11/Hiw2012-iavor-diatchki.pdf
+
+newtype Test (n :: Nat) = Test Integer
+    deriving Show
+
+newtype Sing (n :: Nat) = SNat Integer
+fromSing :: Sing n -> Integer
+fromSing (SNat n) = n
+
+class SingI n where
+    sing :: Sing n
+
+size :: SingI n => Test n -> Sing n
+size _ = sing
+
+
+{-
+data family Sing n
+
+newtype instance Sing n = SNat Integer
+fromSing (SNat n) = n
+
+singToNum :: Num a => Sing (n :: Nat) -> a
+singToNum = fromInteger . fromSing
+
+numToSing :: Integer -> Sing (n :: Nat)
+numToSing = SNat
+
+test3 :: Sing (n :: Nat) -> Integer
+test3 = fromSing
+-}
+------------------------------------------------------
+--Implmentation of finite Abelian groups
 --phantom typing
 newtype Z_n p = Z_n Integer
     deriving Show
@@ -102,10 +151,6 @@ fixTypeNum f = r
         ty :: Z_n p -> p
         ty _ = undefined
 
-{-data Three = Three
-instance TypeNum Three where
-    typeNum _ = 3
--}
 data Four = Four
 instance TypeNum Four where
     typeNum _ = 4
@@ -146,11 +191,7 @@ Example: https://wiki.haskell.org/wikiupload/1/11/Hiw2012-iavor-diatchki.pdf
 
 -------------------------------------------------------------------
 
-instance Fractional a => Group (Product a) where
-    invert (Product a) = Product $ 1 / a
-    pow (Product a) b = Product (a ^^ b)
-    ord _ = Left Infinite
-
+--Me trying to add Z_2 using truth tables
 {-}
 instance Semigroup (Sum Bool) where
     (Sum a) <> (Sum b) = Sum $ xor a b
@@ -180,6 +221,7 @@ instance Group (Product Bool) where
     ord (Product False) = Right 2
     ord _ = Right 1
 -}
+
 ---------------------------------------------------------------
 -- RIPPED FROM: https://hackage.haskell.org/package/groups-0.5.2/docs/src/Data.Group.html
 -- NOT MY WORK
@@ -252,6 +294,9 @@ instance Integral a => Cyclic (Sum a) where
 class (Group a, Group b) => Homomorphism (a -> b) where
 
 -}
+
+-- <.> := f(a_g + b_g)
+
 {-
 isHomomorphic :: (Group a, Group b) => (a -> b) -> a -> a -> Bool
 isHomomorphic f g1 g2 = c && m
@@ -260,5 +305,56 @@ isHomomorphic f g1 g2 = c && m
         m = (f mempty) == mempty
 -}
 
+--data Homomorphism a = Phi (a -> a -> b)
+
+{-
+class Homomorphism a b where
+    phi :: (Group a, Group b) => a -> b
+    (<.>) :: (Group a, Group b) => a -> a -> b
+    a <.> b = (phi a) <> (phi b)
+--    isHomomorphic :: (Group a, Group b) => a -> a -> Bool
+--    isHomomorphic a b = (phi $ a <> b) == (phi a) <> (phi b)
+
+instance Homomorphism (Sum Int) (Product Int) where
+    phi (Sum a) = Product $ mod a 2
+
 homomorphism :: (Group a, Group b) => (a -> b) -> a -> a -> b
 homomorphism f a1 a2 = (f a1) <> (f a2)
+-}
+
+-- Me trying to implement group actions
+-- A group action is a relation between the bijective functions on a set applied to itself
+-- ex, symmetries of a triangle => S_3 
+data GAction g a where
+    GX :: Group g => (g -> a) -> GAction g a
+
+--gAct :: Group g => (g -> a) -> g -> a
+
+{-
+instance Semigroup (GAction) where
+    (GX g1 gx) <> (GX g2 _) = GX (g1 <> g2) gx
+-}
+
+runGX :: GAction g a -> (g -> a)
+runGX (GX g) = g
+
+
+askGX :: Group g => GAction g g
+askGX = GX $ \ g -> g
+{-}
+
+instance Monad GAction where
+    return a = GX $ \ _ -> a
+    GX f >>= k = GX \k f
+
+
+instance Applicative GAction where
+    pure = return
+    f <*> g = do { x <- f ; y <- g ; return (x y) }
+-}
+
+instance Group g => Functor (GAction g) where
+    fmap f (GX gx) = GX $ \ g -> f $ gx g
+
+test :: TypeNum p => Z_n p -> [Char]
+test (Z_n p) = show p
